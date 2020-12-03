@@ -59,6 +59,7 @@ module Hanami
 
       require "hanami/cli/commands/command"
       require "hanami/cli/commands/server"
+      require "hanami/cli/commands/new"
     end
   end
 end
