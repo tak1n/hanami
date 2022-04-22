@@ -25,6 +25,7 @@ module Hanami
     module ClassMethods
       attr_reader :application, :container
 
+      # TODO: maybe give this a writer method for the sake of the application slice?
       def slice_name
         @slice_name ||= SliceName.new(self, inflector: method(:inflector))
       end
@@ -50,6 +51,10 @@ module Hanami
         ensure_slice_consts
 
         prepare_all
+
+        yield self if block_given?
+
+        container.configured!
 
         @prepared = true
         self
@@ -154,10 +159,8 @@ module Hanami
         prepare_container_base_config
         prepare_container_component_dirs
         prepare_autoloader
-        prepare_container_imports
         prepare_container_consts
         instance_exec(container, &@prepare_container_block) if @prepare_container_block
-        container.configured!
       end
 
       def prepare_container_plugins
@@ -234,10 +237,6 @@ module Hanami
             namespace: autoloader_namespace
           )
         end
-      end
-
-      def prepare_container_imports
-        container.import from: application.container, as: :application
       end
 
       def prepare_container_consts

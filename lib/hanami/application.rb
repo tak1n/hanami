@@ -27,7 +27,7 @@ module Hanami
             @application_name = SliceName.new(subclass, inflector: -> { subclass.inflector })
             @configuration = Hanami::Configuration.new(application_name: @application_name, env: Hanami.env)
             @autoloader = Zeitwerk::Loader.new
-            @container = Class.new(Dry::System::Container)
+            # @container = Class.new(Dry::System::Container)
 
             @prepared = @booted = false
 
@@ -45,7 +45,7 @@ module Hanami
     #
     # rubocop:disable Metrics/ModuleLength
     module ClassMethods
-      attr_reader :application_name, :configuration, :autoloader, :container
+      attr_reader :application_name, :configuration, :autoloader #, :container
 
       alias_method :slice_name, :application_name
 
@@ -56,7 +56,7 @@ module Hanami
       end
 
       def prepare(provider_name = nil)
-        container.prepare(provider_name) and return self if provider_name
+        slice.prepare(provider_name) and return self if provider_name
 
         return self if prepared?
 
@@ -68,12 +68,12 @@ module Hanami
         self
       end
 
-      def boot(&block)
+      def boot # (&block)
         return self if booted?
 
         prepare
 
-        container.finalize!(&block)
+        # container.finalize!(&block)
 
         slices.each(&:boot)
 
@@ -115,32 +115,50 @@ module Hanami
         slices.register(...)
       end
 
+      def slice
+        # This worked well enough, but had an unhelpful side effect of setting the slice's
+        # const to Application::Slice, which isn't what we wanted here
+        #
+        # @slice ||= register_slice(:application).tap do |slice|
+        #   slice.instance_variable_set(:@slice_name, application_name)
+        # end
+
+        @slice ||= Class.new(Hanami::Slice).tap do |slice|
+          namespace.const_set(:Slice, slice)
+        end
+      end
+      alias_method :load_application_slice, :slice
+
+      def container
+        slice.container
+      end
+
       def register(...)
-        container.register(...)
+        slice.register(...)
       end
 
       def register_provider(...)
-        container.register_provider(...)
+        slice.register_provider(...)
       end
 
       def start(...)
-        container.start(...)
+        slice.start(...)
       end
 
       def key?(...)
-        container.key?(...)
+        slice.key?(...)
       end
 
       def keys
-        container.keys
+        slice.keys
       end
 
       def [](...)
-        container.[](...)
+        slice.[](...)
       end
 
       def resolve(...)
-        container.resolve(...)
+        slice.resolve(...)
       end
 
       def settings
@@ -168,10 +186,11 @@ module Hanami
 
       def prepare_all
         load_settings
-        prepare_container_plugins
-        prepare_container_base_config
-        prepare_container_consts
-        container.configured!
+        # prepare_container_plugins
+        # prepare_container_base_config
+        # prepare_container_consts
+        # container.configured!
+        prepare_application_slice
         prepare_slices
         # For the application, the autoloader must be prepared after the slices, since
         # they'll be configuring the autoloader with their own dirs
@@ -206,8 +225,30 @@ module Hanami
         namespace.const_set :Deps, container.injector
       end
 
+      def prepare_application_slice
+        application_slice = load_application_slice
+
+        application_slice.prepare do |slice|
+          slice.container.config.root = configuration.root
+
+          slice.container.use(:notifications)
+
+          slice.container.config.provider_dirs = [
+            "config/providers",
+            Pathname(__dir__).join("application/container/providers").realpath,
+          ]
+        end
+      end
+
       def prepare_slices
-        slices.load_slices.each(&:prepare)
+        slices.load_slices.each do |slice|
+          # Not needed now we're no longer using the slice registrar
+          # next if slice.eql?(self.slice)
+
+          slice.import(from: self.slice.container, as: :application)
+          slice.prepare
+        end
+
         slices.freeze
       end
 
