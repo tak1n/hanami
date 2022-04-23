@@ -166,6 +166,7 @@ module Hanami
         prepare_container_plugins
         prepare_container_base_config
         prepare_container_component_dirs
+        prepare_container_registrations
         prepare_autoloader
         prepare_container_consts
         instance_exec(container, &@prepare_container_block) if @prepare_container_block
@@ -174,12 +175,13 @@ module Hanami
       def load_settings
         require_relative "application/settings"
 
-        require root.join(application.configuration.settings_path).to_s
+        settings_require_path = root.join(application.configuration.settings_path).to_s
+        require settings_require_path
+
         settings_class = autodiscover_application_constant(application.configuration.settings_class_name)
         settings_class.new(application.configuration.settings_store)
-      rescue LoadError
-        # TODO: rethink class name? Maybe just Hanami::Settings?
-        Application::Settings.new
+      rescue LoadError => e
+        raise e unless e.path == settings_require_path
       end
 
       def autodiscover_application_constant(constants)
@@ -238,6 +240,10 @@ module Hanami
 
           container.config.component_dirs.add(component_dir)
         end
+      end
+
+      def prepare_container_registrations
+        register(:settings, settings) if settings
       end
 
       def prepare_autoloader
