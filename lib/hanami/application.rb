@@ -28,7 +28,6 @@ module Hanami
             @application_name = SliceName.new(subclass, inflector: -> { subclass.inflector })
             @configuration = Hanami::Configuration.new(application_name: @application_name, env: Hanami.env)
             @autoloader = Zeitwerk::Loader.new
-            # @container = Class.new(Dry::System::Container)
 
             @prepared = @booted = false
 
@@ -48,7 +47,7 @@ module Hanami
     module ClassMethods
       extend Forwardable
 
-      attr_reader :application_name, :configuration, :autoloader #, :container
+      attr_reader :application_name, :configuration, :autoloader
 
       alias_method :slice_name, :application_name
 
@@ -73,12 +72,10 @@ module Hanami
         self
       end
 
-      def boot # (&block)
+      def boot
         return self if booted?
 
         prepare
-
-        # container.finalize!(&block)
 
         slices.each(&:boot)
 
@@ -121,13 +118,6 @@ module Hanami
       end
 
       def slice
-        # This worked well enough, but had an unhelpful side effect of setting the slice's
-        # const to Application::Slice, which isn't what we wanted here
-        #
-        # @slice ||= register_slice(:application).tap do |slice|
-        #   slice.instance_variable_set(:@slice_name, application_name)
-        # end
-
         @slice ||= Class.new(Hanami::Slice).tap do |slice|
           namespace.const_set(:Slice, slice)
         end
@@ -159,31 +149,12 @@ module Hanami
 
       def prepare_all
         load_settings
-        # prepare_container_plugins
-        # prepare_container_base_config
-        # prepare_container_consts
-        # container.configured!
         prepare_application_slice
         prepare_slices
-        # For the application, the autoloader must be prepared after the slices, since
-        # they'll be configuring the autoloader with their own dirs
+
+        # The autoloader must be prepared after the slices, since they'll be configuring
+        # the autoloader with their own dirs
         prepare_autoloader
-      end
-
-      def prepare_container_plugins
-        container.use(:env, inferrer: -> { Hanami.env })
-        container.use(:zeitwerk, loader: autoloader, run_setup: false, eager_load: false)
-        container.use(:notifications)
-      end
-
-      def prepare_container_base_config
-        container.config.root = configuration.root
-        container.config.inflector = configuration.inflector
-
-        container.config.provider_dirs = [
-          "config/providers",
-          Pathname(__dir__).join("application/container/providers").realpath,
-        ]
       end
 
       def prepare_autoload_paths
@@ -191,11 +162,6 @@ module Hanami
         if root.join("lib", application_name.name).directory?
           autoloader.push_dir(root.join("lib", application_name.name), namespace: namespace)
         end
-      end
-
-      def prepare_container_consts
-        namespace.const_set :Container, container
-        namespace.const_set :Deps, container.injector
       end
 
       def prepare_application_slice
@@ -215,9 +181,6 @@ module Hanami
 
       def prepare_slices
         slices.load_slices.each do |slice|
-          # Not needed now we're no longer using the slice registrar
-          # next if slice.eql?(self.slice)
-
           slice.import(from: self.slice.container, as: :application)
           slice.prepare
         end
