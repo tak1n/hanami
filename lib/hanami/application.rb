@@ -53,7 +53,7 @@ module Hanami
 
       alias_method :config, :configuration
 
-      def_delegators :slice, :container, :register, :register_provider, :start, :key?, :keys, :[], :resolve
+      def_delegators :slice, :container, :settings, :register, :register_provider, :start, :key?, :keys, :[], :resolve
 
       def application
         self
@@ -119,14 +119,19 @@ module Hanami
 
       def slice
         @slice ||= Class.new(Hanami::Slice).tap do |slice|
+          slice.instance_variable_set(:@root, configuration.root)
+
+          # We don't want the regular component dirs to be configured (and added to the
+          # autoloader) for this slice
+          #
+          # TODO: If we can have slice-specific config, we could instead just remove all
+          # component dirs that way rather than defining a blank method like this
+          slice.define_singleton_method(:prepare_container_component_dirs) {} # rubocop:disable Lint/EmptyBlock
+
           namespace.const_set(:Slice, slice)
         end
       end
       alias_method :load_application_slice, :slice
-
-      def settings
-        @_settings ||= load_settings
-      end
 
       def namespace
         application_name.namespace
@@ -148,7 +153,6 @@ module Hanami
       end
 
       def prepare_all
-        load_settings
         prepare_application_slice
         prepare_slices
 
@@ -197,21 +201,6 @@ module Hanami
         autoloader.setup
       end
 
-      def load_settings
-        require_relative "application/settings"
-
-        prepare_base_load_path
-        require File.join(configuration.root, configuration.settings_path)
-        settings_class = autodiscover_application_constant(configuration.settings_class_name)
-        settings_class.new(configuration.settings_store)
-      rescue LoadError
-        Settings.new
-      end
-
-      def autodiscover_application_constant(constants)
-        inflector.constantize([application_name.namespace_name, *constants].join(MODULE_DELIMITER))
-      end
-
       def load_router
         require_relative "application/router"
 
@@ -243,6 +232,10 @@ module Hanami
           slices: slices,
           inflector: inflector
         )
+      end
+
+      def autodiscover_application_constant(constants)
+        inflector.constantize([application_name.namespace_name, *constants].join(MODULE_DELIMITER))
       end
     end
     # rubocop:enable Metrics/ModuleLength

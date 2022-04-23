@@ -34,8 +34,9 @@ module Hanami
         slice_name.namespace
       end
 
+      # TODO: make this a writer for use with application slice?
       def root
-        application.root.join(SLICES_DIR, slice_name.to_s)
+        @root ||= application.root.join(SLICES_DIR, slice_name.to_s)
       end
 
       def inflector
@@ -85,6 +86,10 @@ module Hanami
 
       def booted?
         !!@booted
+      end
+
+      def settings
+        @settings ||= load_settings
       end
 
       def register(...)
@@ -154,13 +159,31 @@ module Hanami
         end
       end
 
+      # rubocop:disable Metrics/AbcSize
+
       def prepare_all
+        load_settings
         prepare_container_plugins
         prepare_container_base_config
         prepare_container_component_dirs
         prepare_autoloader
         prepare_container_consts
         instance_exec(container, &@prepare_container_block) if @prepare_container_block
+      end
+
+      def load_settings
+        require_relative "application/settings"
+
+        require root.join(application.configuration.settings_path).to_s
+        settings_class = autodiscover_application_constant(application.configuration.settings_class_name)
+        settings_class.new(application.configuration.settings_store)
+      rescue LoadError
+        # TODO: rethink class name? Maybe just Hanami::Settings?
+        Application::Settings.new
+      end
+
+      def autodiscover_application_constant(constants)
+        inflector.constantize([slice_name.namespace_name, *constants].join(MODULE_DELIMITER))
       end
 
       def prepare_container_plugins
@@ -183,7 +206,7 @@ module Hanami
         container.config.inflector = application.configuration.inflector
       end
 
-      def prepare_container_component_dirs # rubocop:disable Metrics/AbcSize
+      def prepare_container_component_dirs
         return unless root&.directory?
 
         # Add component dirs for each configured component path
@@ -217,7 +240,7 @@ module Hanami
         end
       end
 
-      def prepare_autoloader # rubocop:disable Metrics/AbcSize
+      def prepare_autoloader
         return unless root&.directory?
 
         # Pass configured autoload dirs to the autoloader
@@ -243,6 +266,8 @@ module Hanami
         namespace.const_set :Container, container
         namespace.const_set :Deps, container.injector
       end
+
+      # rubocop:enable Metrics/AbcSize
     end
     # rubocop:enable Metrics/ModuleLength
   end
