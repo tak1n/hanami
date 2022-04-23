@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "dry/system/container"
+require "forwardable"
 require "hanami/configuration"
 require "pathname"
 require "rack"
@@ -45,11 +46,15 @@ module Hanami
     #
     # rubocop:disable Metrics/ModuleLength
     module ClassMethods
+      extend Forwardable
+
       attr_reader :application_name, :configuration, :autoloader #, :container
 
       alias_method :slice_name, :application_name
 
       alias_method :config, :configuration
+
+      def_delegators :slice, :container, :register, :register_provider, :start, :key?, :keys, :[], :resolve
 
       def application
         self
@@ -128,38 +133,6 @@ module Hanami
         end
       end
       alias_method :load_application_slice, :slice
-
-      def container
-        slice.container
-      end
-
-      def register(...)
-        slice.register(...)
-      end
-
-      def register_provider(...)
-        slice.register_provider(...)
-      end
-
-      def start(...)
-        slice.start(...)
-      end
-
-      def key?(...)
-        slice.key?(...)
-      end
-
-      def keys
-        slice.keys
-      end
-
-      def [](...)
-        slice.[](...)
-      end
-
-      def resolve(...)
-        slice.resolve(...)
-      end
 
       def settings
         @_settings ||= load_settings
